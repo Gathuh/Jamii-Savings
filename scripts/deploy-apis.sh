@@ -5,6 +5,14 @@ APIM_URL="https://localhost:9443"
 ENV_NAME="docker"
 APIS_DIR="./apis"
 
+if ! command -v apictl &> /dev/null; then
+    echo "apictl not found, downloading..."
+    curl -L -o apictl.tar.gz https://github.com/wso2/product-apim-tooling/releases/download/v4.3.0/apictl-4.3.0-linux-amd64.tar.gz
+    tar -xzf apictl.tar.gz
+    export PATH=$PATH:$(pwd)/apictl
+    echo "apictl installed"
+fi
+
 echo "Setting up apictl environment..."
 apictl remove env $ENV_NAME 2>/dev/null || true
 apictl add env $ENV_NAME --apim $APIM_URL
