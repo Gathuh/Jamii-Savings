@@ -38,10 +38,21 @@ pipeline {
         stage('Deploy to MI') {
             steps {
                 sh '''
-                    echo "Waiting for MI to detect CAR file..."
-                    sleep 30
-                    curl -s -u admin:admin http://localhost:9201/management/applications | grep -q "test" || exit 1
-                    echo "MI deployment verified"
+                    echo "Waiting for MI to deploy CAR file..."
+                    for i in $(seq 1 12); do
+                        echo "Attempt $i/12 - Checking MI deployment..."
+                        APPS=$(curl -s -u admin:admin http://localhost:9201/management/applications 2>/dev/null || echo "")
+                        echo "Response: $APPS"
+                        if echo "$APPS" | grep -q "test"; then
+                            echo "MI deployment verified"
+                            exit 0
+                        fi
+                        echo "Not ready yet, waiting 10s..."
+                        sleep 10
+                    done
+                    echo "ERROR: MI deployment failed"
+                    docker logs jamii-mi --tail 100
+                    exit 1
                 '''
             }
         }
@@ -76,16 +87,12 @@ pipeline {
         
         stage('Deploy to Production') {
             when {
-                branch 'main'
+                branch 'production'
             }
             steps {
-                input message: 'Deploy to Production?', ok: 'Deploy'
                 echo 'Deploying to Production environment...'
                 sh '''
                     export ENV_NAME="production"
-                    # apictl add env production --apim https://prod-apim:9443
-                    # apictl login production -u $PROD_USER -p $PROD_PASS -k
-                    # ./scripts/deploy-apis.sh
                     echo "Production deployment placeholder"
                 '''
             }
