@@ -2,7 +2,7 @@ pipeline {
     agent any
     
     environment {
-        JAVA_HOME = '/usr/lib/jvm/java-17-openjdk-amd64'
+        JAVA_HOME = '/usr/lib/jvm/java-25-openjdk-amd64'
         PATH = "${JAVA_HOME}/bin:${env.PATH}"
         MI_URL = 'http://localhost:8290'
         APIM_URL = 'https://localhost:9443'
