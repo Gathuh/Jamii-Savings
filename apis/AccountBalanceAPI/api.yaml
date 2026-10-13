@@ -1,0 +1,38 @@
+type: api
+version: v4.3.0
+data:
+  name: AccountBalanceAPI
+  description: Jamii Savings Bank - Account Balance API. Retrieves account balance from MySQL database.
+  context: /accounts
+  version: 1.0.0
+  provider: admin
+  lifeCycleStatus: PUBLISHED
+  type: HTTP
+  transport:
+    - http
+    - https
+  policies:
+    - Unlimited
+  authorizationHeader: Authorization
+  securityScheme:
+    - oauth2
+  visibility: PUBLIC
+  endpointConfig:
+    endpoint_type: http
+    production_endpoints:
+      url: http://localhost:8290/accounts
+    sandbox_endpoints:
+      url: http://localhost:8290/accounts
+  endpointImplementationType: ENDPOINT
+  gatewayPolicies:
+    request:
+      - policyName: addHeader
+        policyVersion: v1
+        parameters:
+          headerName: X-Bank-Name
+          headerValue: JamiiSavings
+  operations:
+    - target: /{accountNumber}/balance
+      verb: GET
+      throttlingPolicy: Unlimited
+      authType: Application & Application User

@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<api context="/loans" name="LoanEligibilityAPI" version="1.0.0" version-type="url" xmlns="http://ws.apache.org/ns/synapse">
+    <resource methods="POST" uri-template="/eligibility">
+        <inSequence>
+            <!-- Store requestId and timestamp -->
+            <property name="requestId" expression="fn:substring-after(get-property('MessageID'), 'urn:uuid:')" scope="default" type="STRING"/>
+            <property name="timestamp" expression="get-property('SYSTEM_TIME')" scope="default" type="STRING"/>
+            
+            <!-- Extract values from JSON request -->
+            <property name="customerId" expression="json-eval($.customerId)" scope="default" type="STRING"/>
+            <property name="monthlyIncome" expression="json-eval($.monthlyIncome)" scope="default" type="STRING"/>
+            <property name="loanAmount" expression="json-eval($.loanAmount)" scope="default" type="STRING"/>
+            <property name="loanTermMonths" expression="json-eval($.loanTermMonths)" scope="default" type="STRING"/>
+            
+            <!-- Validate required fields -->
+            <filter xpath="$ctx:monthlyIncome = '' or $ctx:loanAmount = ''">
+                <then>
+                    <property name="HTTP_SC" value="400" scope="axis2" type="STRING"/>
+                    <property name="messageType" value="application/json" scope="axis2"/>
+                    <payloadFactory media-type="json">
+                        <format>
+                            {
+                                "error": {
+                                    "code": "INVALID_REQUEST",
+                                    "message": "Missing required fields: monthlyIncome and loanAmount are required",
+                                    "status": 400,
+                                    "requestId": "$1",
+                                    "timestamp": "$2"
+                                }
+                            }
+                        </format>
+                        <args>
+                            <arg evaluator="xml" expression="$ctx:requestId"/>
+                            <arg evaluator="xml" expression="$ctx:timestamp"/>
+                        </args>
+                    </payloadFactory>
+                    <respond/>
+                </then>
+            </filter>
+            
+            <!-- Log incoming request with masked customer ID -->
+            <log level="custom">
+                <property name="MESSAGE" value="Loan Eligibility API - Incoming Request"/>
+                <property name="REQUEST_ID" expression="$ctx:requestId"/>
+                <property name="CUSTOMER_ID" expression="fn:concat('CUST-XXX', fn:substring($ctx:customerId, string-length($ctx:customerId) - 2))"/>
+            </log>
+            
+            <!-- Build SOAP request for Calculator service (Subtract: income - loanAmount) -->
+            <payloadFactory media-type="xml">
+                <format>
+                    <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+                        <soap:Body>
+                            <Subtract xmlns="http://tempuri.org/">
+                                <intA>$1</intA>
+                                <intB>$2</intB>
+                            </Subtract>
+                        </soap:Body>
+                    </soap:Envelope>
+                </format>
+                <args>
+                    <arg evaluator="xml" expression="$ctx:monthlyIncome"/>
+                    <arg evaluator="xml" expression="$ctx:loanAmount"/>
+                </args>
+            </payloadFactory>
+            
+            <!-- Set properties for SOAP call -->
+            <property name="messageType" value="text/xml" scope="axis2"/>
+            <property name="ContentType" value="text/xml; charset=utf-8" scope="axis2"/>
+            
+            <!-- Log backend call -->
+            <log level="custom">
+                <property name="MESSAGE" value="Loan Eligibility API - Calling SOAP Calculator"/>
+                <property name="REQUEST_ID" expression="$ctx:requestId"/>
+            </log>
+            
+            <!-- Reset REST_URL_POSTFIX to prevent path appending -->
+            <property name="REST_URL_POSTFIX" value="" scope="axis2"/>
+            
+            <!-- Call SOAP Calculator service -->
+            <call blocking="true">
+                <endpoint>
+                    <address uri="https://api.testingapis.com/api/soap/calculator" format="soap11">
+                        <timeout>
+                            <duration>30000</duration>
+                            <responseAction>fault</responseAction>
+                        </timeout>
+                        <suspendOnFailure>
+                            <initialDuration>0</initialDuration>
+                            <progressionFactor>1</progressionFactor>
+                            <maximumDuration>0</maximumDuration>
+                        </suspendOnFailure>
+                        <markForSuspension>
+                            <retriesBeforeSuspension>0</retriesBeforeSuspension>
+                        </markForSuspension>
+                    </address>
+                </endpoint>
+            </call>
+            
+            <!-- Extract result from SOAP response (eligibility score = income - loanAmount) -->
+            <property name="eligibilityScore" expression="//*[local-name()='SubtractResult']/text()" scope="default" type="STRING"/>
+            
+            <!-- Log response -->
+            <log level="custom">
+                <property name="MESSAGE" value="Loan Eligibility API - SOAP Response Received"/>
+                <property name="REQUEST_ID" expression="$ctx:requestId"/>
+                <property name="ELIGIBILITY_SCORE" expression="$ctx:eligibilityScore"/>
+            </log>
+            
+            <!-- Transform to JSON response -->
+            <property name="messageType" value="application/json" scope="axis2"/>
+            
+            <!-- Check eligibility: score > 0 means income > loan amount -->
+            <filter xpath="number($ctx:eligibilityScore) > 0">
+                <then>
+                    <!-- Eligible -->
+                    <payloadFactory media-type="json">
+                        <format>
+                            {
+                                "eligible": true,
+                                "customerId": "$1",
+                                "requestedAmount": $2,
+                                "maxEligibleAmount": $3,
+                                "monthlyIncome": $4,
+                                "eligibilityScore": $5,
+                                "recommendation": "Loan approved. Customer has sufficient income.",
+                                "requestId": "$6",
+                                "timestamp": "$7"
+                            }
+                        </format>
+                        <args>
+                            <arg evaluator="xml" expression="$ctx:customerId"/>
+                            <arg evaluator="xml" expression="$ctx:loanAmount"/>
+                            <arg evaluator="xml" expression="$ctx:eligibilityScore"/>
+                            <arg evaluator="xml" expression="$ctx:monthlyIncome"/>
+                            <arg evaluator="xml" expression="$ctx:eligibilityScore"/>
+                            <arg evaluator="xml" expression="$ctx:requestId"/>
+                            <arg evaluator="xml" expression="$ctx:timestamp"/>
+                        </args>
+                    </payloadFactory>
+                </then>
+                <else>
+                    <!-- Not Eligible -->
+                    <payloadFactory media-type="json">
+                        <format>
+                            {
+                                "eligible": false,
+                                "customerId": "$1",
+                                "requestedAmount": $2,
+                                "maxEligibleAmount": 0,
+                                "monthlyIncome": $3,
+                                "eligibilityScore": $4,
+                                "recommendation": "Loan not approved. Requested amount exceeds affordable limit.",
+                                "requestId": "$5",
+                                "timestamp": "$6"
+                            }
+                        </format>
+                        <args>
+                            <arg evaluator="xml" expression="$ctx:customerId"/>
+                            <arg evaluator="xml" expression="$ctx:loanAmount"/>
+                            <arg evaluator="xml" expression="$ctx:monthlyIncome"/>
+                            <arg evaluator="xml" expression="$ctx:eligibilityScore"/>
+                            <arg evaluator="xml" expression="$ctx:requestId"/>
+                            <arg evaluator="xml" expression="$ctx:timestamp"/>
+                        </args>
+                    </payloadFactory>
+                </else>
+            </filter>
+            
+            <respond/>
+        </inSequence>
+        <faultSequence>
+            <!-- Handle SOAP Faults - clean JSON response, no raw XML leaked -->
+            <log level="custom">
+                <property name="MESSAGE" value="Loan Eligibility API - Error Occurred"/>
+                <property name="REQUEST_ID" expression="$ctx:requestId"/>
+                <property name="ERROR_CODE" expression="get-property('ERROR_CODE')"/>
+                <property name="ERROR_MESSAGE" expression="get-property('ERROR_MESSAGE')"/>
+            </log>
+            
+            <property name="HTTP_SC" value="500" scope="axis2" type="STRING"/>
+            <property name="messageType" value="application/json" scope="axis2"/>
+            
+            <payloadFactory media-type="json">
+                <format>
+                    {
+                        "error": {
+                            "code": "ELIGIBILITY_CHECK_FAILED",
+                            "message": "Unable to process eligibility check. Please try again later.",
+                            "status": 500,
+                            "requestId": "$1",
+                            "timestamp": "$2"
+                        }
+                    }
+                </format>
+                <args>
+                    <arg evaluator="xml" expression="$ctx:requestId"/>
+                    <arg evaluator="xml" expression="$ctx:timestamp"/>
+                </args>
+            </payloadFactory>
+            
+            <respond/>
+        </faultSequence>
+    </resource>
+</api>

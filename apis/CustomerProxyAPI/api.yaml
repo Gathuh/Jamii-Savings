@@ -1,0 +1,31 @@
+type: api
+version: v4.3.0
+data:
+  name: CustomerProxyAPI
+  description: Jamii Savings Bank - Customer Profile API. Proxies customer data with correlation tracking.
+  context: /customers
+  version: 1.0.0
+  provider: admin
+  lifeCycleStatus: PUBLISHED
+  type: HTTP
+  transport:
+    - http
+    - https
+  policies:
+    - Unlimited
+  authorizationHeader: Authorization
+  securityScheme:
+    - oauth2
+  visibility: PUBLIC
+  endpointConfig:
+    endpoint_type: http
+    production_endpoints:
+      url: http://localhost:8290/customers
+    sandbox_endpoints:
+      url: http://localhost:8290/customers
+  endpointImplementationType: ENDPOINT
+  operations:
+    - target: /{customerId}
+      verb: GET
+      throttlingPolicy: Unlimited
+      authType: Application & Application User

@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<api context="/accounts" name="AccountBalanceAPI" version="1.0.0" version-type="url" xmlns="http://ws.apache.org/ns/synapse">
+    <resource methods="GET" uri-template="/{accountNumber}/balance">
+        <inSequence>
+            <!-- Store requestId and timestamp -->
+            <property name="requestId" expression="fn:substring-after(get-property('MessageID'), 'urn:uuid:')" scope="default" type="STRING"/>
+            <property name="timestamp" expression="get-property('SYSTEM_TIME')" scope="default" type="STRING"/>
+            <property name="accountNum" expression="$ctx:uri.var.accountNumber" scope="default" type="STRING"/>
+            
+            <!-- Call Data Service -->
+            <dataServiceCall serviceName="AccountDataService">
+                <operations type="single">
+                    <operation name="getAccountBalanceOp">
+                        <param name="accountNumber" value="{$ctx:uri.var.accountNumber}"/>
+                    </operation>
+                </operations>
+                <source type="inline"/>
+                <target type="body"/>
+            </dataServiceCall>
+            
+            <!-- Check if account exists (empty response check) -->
+            <property name="accountData" expression="json-eval($.account.accountNumber)" scope="default" type="STRING"/>
+            
+            <filter xpath="$ctx:accountData = '' or not($ctx:accountData)">
+                <then>
+                    <!-- Account not found - return 404 -->
+                    <property name="HTTP_SC" value="404" scope="axis2" type="STRING"/>
+                    <property name="messageType" value="application/json" scope="axis2"/>
+                    <payloadFactory media-type="json">
+                        <format>
+                            {
+                                "error": {
+                                    "code": "ACCOUNT_NOT_FOUND",
+                                    "message": "Account not found",
+                                    "status": 404,
+                                    "requestId": "$1",
+                                    "timestamp": "$2"
+                                }
+                            }
+                        </format>
+                        <args>
+                            <arg evaluator="xml" expression="$ctx:requestId"/>
+                            <arg evaluator="xml" expression="$ctx:timestamp"/>
+                        </args>
+                    </payloadFactory>
+                </then>
+                <else>
+                    <!-- Account found - build success response -->
+                    <property name="messageType" value="application/json" scope="axis2"/>
+                    <payloadFactory media-type="json">
+                        <format>
+                            {
+                                "accountNumber": "$1",
+                                "status": "$2",
+                                "balance": {
+                                    "amount": $3,
+                                    "currency": "$4"
+                                },
+                                "requestId": "$5",
+                                "timestamp": "$6"
+                            }
+                        </format>
+                        <args>
+                            <arg evaluator="json" expression="$.account.accountNumber"/>
+                            <arg evaluator="json" expression="$.account.status"/>
+                            <arg evaluator="json" expression="$.account.balance.amount"/>
+                            <arg evaluator="json" expression="$.account.balance.currency"/>
+                            <arg evaluator="xml" expression="$ctx:requestId"/>
+                            <arg evaluator="xml" expression="$ctx:timestamp"/>
+                        </args>
+                    </payloadFactory>
+                </else>
+            </filter>
+            
+            <!-- Log with masked account number -->
+            <log level="custom">
+                <property name="MESSAGE" value="Account Balance Request"/>
+                <property name="ACCOUNT" expression="fn:concat('XXX', fn:substring($ctx:accountNum, string-length($ctx:accountNum) - 3))"/>
+                <property name="REQUEST_ID" expression="$ctx:requestId"/>
+            </log>
+            
+            <respond/>
+        </inSequence>
+        <faultSequence>
+            <!-- Handle DB errors -->
+            <property name="HTTP_SC" value="500" scope="axis2" type="STRING"/>
+            <property name="messageType" value="application/json" scope="axis2"/>
+            <payloadFactory media-type="json">
+                <format>
+                    {
+                        "error": {
+                            "code": "INTERNAL_ERROR",
+                            "message": "Database error occurred",
+                            "status": 500,
+                            "requestId": "$1",
+                            "timestamp": "$2"
+                        }
+                    }
+                </format>
+                <args>
+                    <arg evaluator="xml" expression="$ctx:requestId"/>
+                    <arg evaluator="xml" expression="$ctx:timestamp"/>
+                </args>
+            </payloadFactory>
+            <respond/>
+        </faultSequence>
+    </resource>
+</api>

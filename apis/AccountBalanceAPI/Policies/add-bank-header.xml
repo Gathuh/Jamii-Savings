@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sequence name="add-bank-header" xmlns="http://ws.apache.org/ns/synapse">
+    <!-- Custom Gateway Mediation: Inject bank identification headers -->
+    <header name="X-Bank-Name" value="JamiiSavings" scope="transport"/>
+    <header name="X-Bank-Country" value="Kenya" scope="transport"/>
+    <header name="X-API-Version" value="1.0.0" scope="transport"/>
+</sequence>

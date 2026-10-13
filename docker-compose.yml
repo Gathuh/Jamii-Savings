@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: jamii-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_DATABASE: jamii_savings
+    ports:
+      - "3307:3306"
+    volumes:
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot123"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  wso2mi:
+    build:
+      context: ./docker/mi
+      dockerfile: Dockerfile
+    container_name: jamii-mi
+    ports:
+      - "8290:8290"
+      - "8253:8253"
+      - "9201:9201"
+    volumes:
+      - ./target:/home/wso2carbon/wso2mi-4.3.0/repository/deployment/server/carbonapps
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      - JAVA_OPTS=-Xms512m -Xmx1024m
+      - DB_HOST=jamii-mysql
+      - DB_PORT=3306
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9201/healthz"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+
+  wso2am:
+    image: wso2/wso2am:4.3.0
+    container_name: jamii-apim
+    hostname: localhost
+    extra_hosts:
+      - "localhost:127.0.0.1"
+    ports:
+      - "9443:9443"
+      - "8280:8280"
+      - "8243:8243"
+    environment:
+      - JAVA_OPTS=-Xms512m -Xmx1024m -Djava.net.preferIPv4Stack=true
+    healthcheck:
+      test: ["CMD", "curl", "-k", "-f", "https://localhost:9443/services/Version"]
+      interval: 20s
+      timeout: 15s
+      retries: 30
+      start_period: 120s
+
+networks:
+  default:
+    name: jamii-network

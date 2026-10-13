@@ -1,0 +1,24 @@
+<data name="AccountDataService" serviceNamespace="" serviceGroup="" transports="http https" disableStreaming="true">
+    <description>Data service for account balance queries</description>
+    <config id="rdbms">
+        <property name="driverClassName">com.mysql.cj.jdbc.Driver</property>
+        <property name="url">jdbc:mysql://jamii-mysql:3306/jamii_savings</property>
+        <property name="username">jamii_user</property>
+        <property name="password">jamii_password</property>
+    </config>
+    <query id="getAccountBalance" useConfig="rdbms">
+        <sql>SELECT account_number, status, balance, currency FROM accounts WHERE account_number = :accountNumber</sql>
+        <param name="accountNumber" paramType="SCALAR" sqlType="STRING" type="IN"/>
+        <result outputType="json">{"account":{"accountNumber":"$account_number","status":"$status","balance":{"amount":"$balance","currency":"$currency"}}}</result>
+    </query>
+    <operation name="getAccountBalanceOp">
+        <call-query href="getAccountBalance">
+            <with-param name="accountNumber" query-param="accountNumber"/>
+        </call-query>
+    </operation>
+    <resource method="GET" path="/accounts/{accountNumber}/balance">
+        <call-query href="getAccountBalance">
+            <with-param name="accountNumber" query-param="accountNumber"/>
+        </call-query>
+    </resource>
+</data>

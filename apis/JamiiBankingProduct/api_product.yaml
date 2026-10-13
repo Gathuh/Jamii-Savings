@@ -1,0 +1,25 @@
+type: api_product
+version: v4.3.0
+data:
+  name: JamiiBankingProduct
+  description: |
+    Jamii Savings Bank - Complete Banking API Product.
+    Bundles Account Balance, Customer Profile, and Loan Eligibility APIs.
+  context: /jamii-banking
+  version: 1.0.0
+  provider: admin
+  state: PUBLISHED
+  visibility: PUBLIC
+  subscriptionAvailability: CURRENT_TENANT
+  policies:
+    - Unlimited
+    - Gold
+    - Silver
+    - Bronze
+  apis:
+    - name: AccountBalanceAPI
+      version: 1.0.0
+    - name: CustomerProxyAPI
+      version: 1.0.0
+    - name: LoanEligibilityAPI
+      version: 1.0.0

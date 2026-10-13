@@ -1,0 +1,31 @@
+type: api
+version: v4.3.0
+data:
+  name: LoanEligibilityAPI
+  description: Jamii Savings Bank - Loan Eligibility API. SOAP-to-REST transformation for loan eligibility checks.
+  context: /loans
+  version: 1.0.0
+  provider: admin
+  lifeCycleStatus: PUBLISHED
+  type: HTTP
+  transport:
+    - http
+    - https
+  policies:
+    - Gold
+  authorizationHeader: Authorization
+  securityScheme:
+    - oauth2
+  visibility: PUBLIC
+  endpointConfig:
+    endpoint_type: http
+    production_endpoints:
+      url: http://localhost:8290/loans/1.0.0
+    sandbox_endpoints:
+      url: http://localhost:8290/loans/1.0.0
+  endpointImplementationType: ENDPOINT
+  operations:
+    - target: /eligibility
+      verb: POST
+      throttlingPolicy: Gold
+      authType: Application & Application User
