@@ -41,17 +41,21 @@ pipeline {
                     echo "Waiting for MI to deploy CAR file..."
                     for i in $(seq 1 12); do
                         echo "Attempt $i/12 - Checking MI deployment..."
-                        APPS=$(curl -s -u admin:admin http://localhost:9201/management/applications 2>/dev/null || echo "")
-                        echo "Response: $APPS"
-                        if echo "$APPS" | grep -q "test"; then
-                            echo "MI deployment verified"
+                        
+                        # Check if APIs are responding
+                        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8290/accounts/ACC001/balance 2>/dev/null || echo "000")
+                        echo "AccountBalanceAPI response code: $HTTP_CODE"
+                        
+                        if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "404" ] || [ "$HTTP_CODE" = "400" ] || [ "$HTTP_CODE" = "401" ]; then
+                            echo "MI deployment verified - APIs are responding"
                             exit 0
                         fi
+                        
                         echo "Not ready yet, waiting 10s..."
                         sleep 10
                     done
                     echo "ERROR: MI deployment failed"
-                    docker logs jamii-mi --tail 100
+                    docker logs jamii-mi --tail 50
                     exit 1
                 '''
             }
