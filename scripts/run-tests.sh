@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e
 
 MI_URL="http://localhost:8290"
 FAILED=0
@@ -54,7 +53,9 @@ echo "=========================================="
 
 echo "Checking database connectivity..."
 docker exec jamii-mysql mysql -uroot -proot123 -e "SELECT COUNT(*) FROM jamii_savings.accounts;" 2>/dev/null || echo "DB check skipped"
+echo ""
 
+echo "Test 1: CustomerProxy"
 test_endpoint "CustomerProxy - Valid Customer" \
     "GET" "$MI_URL/customers/1" "" "200" "correlationId"
 
