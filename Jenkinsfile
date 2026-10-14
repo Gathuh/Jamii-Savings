@@ -104,15 +104,14 @@ pipeline {
     }
     
     post {
-        always {
-            sh 'docker compose down -v || true'
-            sh 'docker system prune -f || true'
-        }
         success {
-            echo 'Pipeline completed successfully'
+            echo 'Pipeline completed successfully - infrastructure is running'
+            echo 'MI URL: http://localhost:8290'
+            echo 'APIM URL: https://localhost:9443'
         }
         failure {
-            echo 'Pipeline failed - check logs for details'
+            sh 'docker compose down -v || true'
+            echo 'Pipeline failed - infrastructure cleaned up'
         }
     }
 }
