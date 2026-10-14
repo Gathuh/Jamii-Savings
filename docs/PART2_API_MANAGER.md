@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes how the three Jamii Savings Bank integration APIs are exposed through WSO2 API Manager with security, throttling, and gateway policies.
+This document describes how the three Jamii Savings Bank APIs are exposed through WSO2 API Manager, including security, throttling, gateway policies, backend service choices, and how a consuming application subscribes via the Developer Portal.
 
 ## Published APIs
 
@@ -10,125 +10,89 @@ This document describes how the three Jamii Savings Bank integration APIs are ex
 |----------|---------|---------|-----------------|----------|
 | AccountBalanceAPI | /accounts | 1.0.0 | Unlimited | OAuth2 |
 | CustomerProxyAPI | /customers | 1.0.0 | Unlimited | OAuth2 |
-| LoanEligibilityAPI | /loans | 1.0.0 | **Gold** | OAuth2 |
+| LoanEligibilityAPI | /loans | 1.0.0 | Gold | OAuth2 |
 
-### Throttling Tier Rationale
+## Backend Service Choices
 
-**LoanEligibilityAPI uses Gold tier** (1000 requests/min) instead of Unlimited because:
-- Loan eligibility checks involve backend SOAP service calls with external dependencies
-- Rate limiting prevents abuse and protects the downstream calculator service
-- Financial decision APIs should have controlled access to ensure fair usage
+**CustomerProxyAPI - JSONPlaceholder**
+JSONPlaceholder (jsonplaceholder.typicode.com) was chosen as it provides a realistic REST API returning structured user data (name, email, address, company) that mirrors what a real CRM would return. It requires no authentication setup, making it self-contained for evaluation. In production this would be replaced with the bank's internal CRM behind mutual TLS.
+
+**LoanEligibilityAPI - SOAP Calculator (testingapis.com)**
+The calculator at api.testingapis.com/api/soap/calculator was chosen because it is a publicly accessible SOAP service that demonstrates real protocol transformation without requiring a local SOAP server. The request/response mapping is:
+
+- `monthlyIncome` maps to `intA` (the larger value)
+- `loanAmount` maps to `intB` (the value to subtract)
+- `SubtractResult` (income minus loan amount) becomes the `eligibilityScore`
+- A positive score means income exceeds the loan amount - customer is eligible
+- A negative score means loan exceeds affordable limit - customer is not eligible
+
+## Throttling Tier Rationale
+
+**LoanEligibilityAPI uses the Gold tier** because loan eligibility checks are computationally expensive SOAP operations with an external dependency. Rate limiting this API prevents abuse and protects the downstream calculator service. AccountBalanceAPI and CustomerProxyAPI use Unlimited as balance lookups and customer reads are expected to support high-frequency polling from internal systems.
 
 ## Security Scheme
 
-All APIs use **OAuth2** with client credentials flow:
+All three APIs use OAuth2 with the client credentials flow. Tokens are issued by the APIM token endpoint and passed as Bearer tokens on every request.
+
+## Custom Gateway Mediation Policy
+
+**AccountBalanceAPI** has a custom gateway policy that injects an `X-Bank-Name: JamiiSavings` header on every request. This allows downstream systems and audit logs to identify the originating bank and API without inspecting the request body. The policy is defined at `apis/AccountBalanceAPI/Policies/add-bank-header.xml`.
+
+## API Product
+
+**JamiiBankingProduct** bundles all three APIs under a single subscription at context `/jamii-banking`. A developer subscribing to the product gets access to all three APIs with one set of credentials, simplifying onboarding. The product definition is at `apis/JamiiBankingProduct/api_product.yaml`.
+
+## Developer Portal Subscription Guide
+
+1. Go to https://localhost:9443/devportal and log in
+2. Click Applications, then Add New Application, name it and save
+3. Go to the API you want (or JamiiBankingProduct for all three), click Subscribe, select your application
+4. Go to Applications, your app, Production Keys, click Generate Keys
+5. Copy the Consumer Key and Consumer Secret and generate a token:
 
 ```bash
-# Get access token
 curl -k -X POST https://localhost:9443/oauth2/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -u "<ConsumerKey>:<ConsumerSecret>" \
   -d "grant_type=client_credentials"
+```
 
-# Call API with token
+## Testing
+
+### Direct Against MI (No Token Required)
+
+```bash
+curl -s http://localhost:8290/accounts/1.0.0/ACC001/balance
+
+curl -s http://localhost:8290/customers/1.0.0/1
+
+curl -s -X POST http://localhost:8290/loans/1.0.0/eligibility \
+  -H "Content-Type: application/json" \
+  -d '{"customerId":"C123","monthlyIncome":50000,"loanAmount":20000,"loanTermMonths":12}'
+```
+
+### Via APIM Gateway (OAuth2 Required)
+
+```bash
 curl -k https://localhost:8243/accounts/1.0.0/ACC001/balance \
-  -H "Authorization: Bearer <access_token>"
+  -H "Authorization: Bearer <your_token>"
+
+curl -k https://localhost:8243/customers/1.0.0/1 \
+  -H "Authorization: Bearer <your_token>"
+
+curl -k -X POST https://localhost:8243/loans/1.0.0/eligibility \
+  -H "Authorization: Bearer <your_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"customerId":"C123","monthlyIncome":50000,"loanAmount":20000,"loanTermMonths":12}'
 ```
 
-## Custom Gateway Mediation Policy
+### Gateway URLs
 
-**AccountBalanceAPI** has a custom gateway policy that injects bank identification headers:
+| Environment | HTTPS |
+|-------------|-------|
+| Gateway | https://localhost:8243 |
+| Token Endpoint | https://localhost:9443/oauth2/token |
 
-```xml
-<header name="X-Bank-Name" value="JamiiSavings" scope="transport"/>
-<header name="X-Bank-Country" value="Kenya" scope="transport"/>
-<header name="X-API-Version" value="1.0.0" scope="transport"/>
-```
+### OpenAPI Specifications
 
-**Purpose:** Downstream systems can identify the source bank and API version for audit trails and routing decisions.
-
-## API Product
-
-**JamiiBankingProduct** bundles all three APIs under a single subscription:
-
-- Context: `/jamii-banking`
-- Version: 1.0.0
-- Included APIs: AccountBalanceAPI, CustomerProxyAPI, LoanEligibilityAPI
-
-**Benefits:**
-- Single subscription for complete banking functionality
-- Simplified developer onboarding
-- Consistent billing and usage tracking
-
-## Developer Portal Subscription Guide
-
-### How to Discover and Subscribe to APIs
-
-1. **Access Developer Portal**
-   - URL: https://localhost:9443/devportal
-   - Login with your developer credentials (or register)
-
-2. **Browse APIs**
-   - Click "APIs" in the top menu
-   - Search for "Jamii" or browse by category
-   - View API documentation, try out endpoints
-
-3. **Create an Application**
-   - Go to "Applications" → "Add New Application"
-   - Name: e.g., "MyBankingApp"
-   - Select throttling policy (Unlimited, Gold, Silver, Bronze)
-   - Click "Save"
-
-4. **Subscribe to APIs**
-   - Go to an API (e.g., AccountBalanceAPI)
-   - Click "Subscribe"
-   - Select your application
-   - Choose subscription tier
-   - Click "Subscribe"
-   
-   *Or subscribe to JamiiBankingProduct for all 3 APIs at once*
-
-5. **Generate Credentials**
-   - Go to "Applications" → Your App → "Production Keys"
-   - Click "Generate Keys"
-   - Copy Consumer Key and Consumer Secret
-
-6. **Get Access Token**
-   ```bash
-   curl -k -X POST https://localhost:9443/oauth2/token \
-     -u "<ConsumerKey>:<ConsumerSecret>" \
-     -d "grant_type=client_credentials"
-   ```
-
-7. **Call APIs**
-   ```bash
-   # Account Balance
-   curl -k https://localhost:8243/accounts/1.0.0/ACC001/balance \
-     -H "Authorization: Bearer <token>"
-   
-   # Customer Profile
-   curl -k https://localhost:8243/customers/1.0.0/1 \
-     -H "Authorization: Bearer <token>"
-   
-   # Loan Eligibility
-   curl -k -X POST https://localhost:8243/loans/1.0.0/eligibility \
-     -H "Authorization: Bearer <token>" \
-     -H "Content-Type: application/json" \
-     -d '{"customerId":"C123","monthlyIncome":50000,"loanAmount":20000}'
-   ```
-
-## Gateway URLs
-
-| Environment | HTTP | HTTPS |
-|-------------|------|-------|
-| Gateway | http://localhost:8280 | https://localhost:8243 |
-| Token Endpoint | - | https://localhost:9443/oauth2/token |
-
-## OpenAPI Specifications
-
-Located in:
-- `apis/AccountBalanceAPI/Definitions/swagger.yaml`
-- `apis/CustomerProxyAPI/Definitions/swagger.yaml`
-- `apis/LoanEligibilityAPI/Definitions/swagger.yaml`
-
-These can be imported into Postman, Swagger UI, or any OpenAPI-compatible tool.
+Located at `apis/{API}/Definitions/swagger.yaml` for each API. These can be imported into Postman or Swagger UI.

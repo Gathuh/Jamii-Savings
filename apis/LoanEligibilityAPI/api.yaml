@@ -12,7 +12,7 @@ data:
     - http
     - https
   policies:
-    - Unlimited
+    - Gold
   authorizationHeader: Authorization
   securityScheme:
     - oauth2
@@ -27,5 +27,5 @@ data:
   operations:
     - target: /eligibility
       verb: POST
-      throttlingPolicy: Unlimited
+      throttlingPolicy: Gold
       authType: Application & Application User

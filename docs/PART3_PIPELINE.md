@@ -2,7 +2,7 @@
 
 ## Overview
 
-A single declarative Jenkins pipeline that builds, tests, and deploys all three Jamii Savings Bank APIs.
+A single declarative Jenkins pipeline that builds, tests, and deploys all three Jamii Savings Bank APIs. The pipeline is defined in `Jenkinsfile` at the repository root.
 
 ## Pipeline Stages
 
@@ -10,78 +10,58 @@ A single declarative Jenkins pipeline that builds, tests, and deploys all three 
 |-------|-------------|------------------|
 | Checkout | Clone repository | Stop pipeline |
 | Build MI Artifacts | `mvn clean install` creates CAR file | Stop pipeline |
-| Start Infrastructure | docker-compose up (MySQL, MI, APIM) | Stop pipeline |
-| Deploy to MI | CAR auto-deployed via volume mount | Stop pipeline |
-| Run MI Tests | Test all 3 APIs against MI backend | Stop pipeline |
-| Deploy APIs to APIM | apictl imports all 3 APIs | Stop pipeline |
-| Deploy to Staging | Triggered on `develop` branch | Stop pipeline |
-| Deploy to Production | Manual approval, `main` branch only | Stop pipeline |
+| Start Infrastructure | docker compose up (MySQL, MI, APIM) | Stop pipeline |
+| Deploy to MI | CAR deployed, APIs verified via health check | Stop pipeline |
+| Run MI Tests | All three APIs tested against MI directly | Stop pipeline |
+| Deploy APIs to APIM | All three API definitions imported | Stop pipeline |
+| Deploy to Staging | Triggered on `develop` branch (placeholder) | Stop pipeline |
+| Deploy to Production | Triggered on `production` branch (placeholder) | Stop pipeline |
 
 ## Environment Separation
 
-| Environment | Trigger | APIM URL | Approval |
-|-------------|---------|----------|----------|
-| Dev | Every commit | localhost:9443 | None |
-| Staging | `develop` branch | staging-apim:9443 | None |
-| Production | `main` branch | prod-apim:9443 | Manual |
+| Environment | Trigger | Status |
+|-------------|---------|--------|
+| Dev | Every run | Fully wired, runs locally via Docker Compose |
+| Staging | `develop` branch | Placeholder - structure exists, no live server |
+| Production | `production` branch | Placeholder - structure exists, no live server |
+
+Staging and production stages exist in the Jenkinsfile to demonstrate the promotion model. When a dedicated server is available they are activated by pointing each stage at the correct APIM and MI URLs with environment-specific credentials.
 
 ## Failure Handling
 
-The pipeline uses `set -e` in all scripts and stops immediately if any step fails:
+The pipeline stops immediately if any stage fails. Build failure means no deployment occurs. Infrastructure failure means no tests run. MI test failure means no APIM import happens. There is no partial deployment - all three APIs deploy together as a single CAR artifact or not at all.
 
-- Build failure → No deployment occurs
-- Infrastructure failure → No tests run
-- MI test failure → No APIM deployment
-- Any APIM import failure → Pipeline fails (no partial deploy)
+## Webhook Setup (When Hosted on a Real Server)
 
-## Files Structure
+Currently the pipeline runs on a local machine and is triggered manually. To enable webhook-driven builds when a dedicated server is available:
 
-```
-├── Jenkinsfile
-├── docker-compose.yml
-├── database/
-│   └── init.sql
-├── scripts/
-│   ├── wait-for-services.sh
-│   ├── run-tests.sh
-│   └── deploy-apis.sh
-└── apis/
-    ├── AccountBalanceAPI/
-    ├── CustomerProxyAPI/
-    └── LoanEligibilityAPI/
-```
+1. Host Jenkins on a cloud server with a public IP
+2. In the GitHub repository go to Settings, Webhooks, Add webhook
+3. Set Payload URL to `http://<jenkins-server>/github-webhook/`
+4. Set Content type to `application/json`
+5. Select "Just the push event"
+6. In the Jenkins job enable "GitHub hook trigger for GITScm polling"
 
-## Jenkins Requirements
-
-- JDK 17+
-- Maven 3.x
-- Docker & Docker Compose
-- apictl (WSO2 API Controller)
-- curl
-
-## Running Locally
-
-```bash
-mvn clean install
-
-docker-compose up -d
-
-./scripts/wait-for-services.sh
-
-./scripts/run-tests.sh
-
-./scripts/deploy-apis.sh
-
-docker-compose down -v
-```
+Every push to `main` will then trigger a full build, deploy, and test cycle automatically.
 
 ## Test Coverage
 
 | API | Test Case | Expected |
 |-----|-----------|----------|
-| AccountBalanceAPI | Valid account (ACC001) | 200, account data |
-| AccountBalanceAPI | Invalid account | 404, error |
-| CustomerProxyAPI | Valid customer (1) | 200, customer data |
-| LoanEligibilityAPI | Eligible (income > loan) | 200, eligible: true |
-| LoanEligibilityAPI | Not eligible (income < loan) | 200, eligible: false |
-| LoanEligibilityAPI | Missing fields | 400, validation error |
+| AccountBalanceAPI | Valid account ACC001 | 200, account data |
+| AccountBalanceAPI | Invalid account | 404, error response |
+| CustomerProxyAPI | Valid customer ID 1 | 200, customer data |
+| LoanEligibilityAPI | Income greater than loan | 200, eligible true |
+| LoanEligibilityAPI | Loan greater than income | 200, eligible false |
+| LoanEligibilityAPI | Missing required fields | 400, validation error |
+
+## Running Locally Without Jenkins
+
+```bash
+mvn clean install -DskipTests
+docker compose up -d
+chmod +x scripts/*.sh
+./scripts/wait-for-services.sh
+./scripts/run-tests.sh
+./scripts/deploy-apis.sh
+```
