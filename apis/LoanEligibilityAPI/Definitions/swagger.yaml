@@ -1,12 +1,53 @@
+openapi: 3.0.1
 info:
   title: LoanEligibilityAPI
+  description: Jamii Savings Bank - Loan Eligibility API
   version: 1.0.0
-openapi: 3.0.1
+servers:
+  - url: http://jamii-mi:8290/loans/1.0.0
 paths:
   /eligibility:
     post:
+      summary: Check loan eligibility
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - customerId
+                - monthlyIncome
+                - loanAmount
+                - loanTermMonths
+              properties:
+                customerId:
+                  type: string
+                  example: "C123"
+                monthlyIncome:
+                  type: number
+                  example: 50000
+                loanAmount:
+                  type: number
+                  example: 20000
+                loanTermMonths:
+                  type: integer
+                  example: 12
       responses:
         "200":
-          description: OK
-servers:
-- url: http://localhost:8290/loans/1.0.0
+          description: Eligibility result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  eligible:
+                    type: boolean
+                  maxLoanAmount:
+                    type: number
+                  interestRate:
+                    type: number
+                  requestId:
+                    type: string
+        "400":
+          description: Invalid request
