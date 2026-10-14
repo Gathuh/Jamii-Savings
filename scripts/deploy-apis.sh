@@ -1,10 +1,8 @@
 #!/bin/bash
 set -e
-
 APIM_URL="https://localhost:9443"
 ENV_NAME="docker"
 APIS_DIR="./apis"
-
 if ! command -v apictl &> /dev/null; then
     echo "apictl not found, downloading..."
     curl -L -o apictl.tar.gz https://github.com/wso2/product-apim-tooling/releases/download/v4.3.0/apictl-4.3.0-linux-amd64.tar.gz
@@ -12,16 +10,12 @@ if ! command -v apictl &> /dev/null; then
     export PATH=$PATH:$(pwd)/apictl
     echo "apictl installed"
 fi
-
 echo "Setting up apictl environment..."
 apictl remove env $ENV_NAME 2>/dev/null || true
 apictl add env $ENV_NAME --apim $APIM_URL
-
 echo "Logging into APIM..."
 apictl login $ENV_NAME -u admin -p admin -k
-
 echo "Importing APIs..."
-
 import_api() {
     local api_path=$1
     local api_name=$2
@@ -33,15 +27,23 @@ import_api() {
         exit 1
     fi
 }
-
 import_api "$APIS_DIR/AccountBalanceAPI" "AccountBalanceAPI"
 import_api "$APIS_DIR/CustomerProxyAPI" "CustomerProxyAPI"
 import_api "$APIS_DIR/LoanEligibilityAPI" "LoanEligibilityAPI"
-
 echo ""
 echo "Verifying API deployment..."
-sleep 5
+sleep 10
+for i in 1 2 3; do
+    PUBLISHED_COUNT=$(apictl get apis -e $ENV_NAME -k 2>/dev/null | grep -c "PUBLISHED" || echo "0")
+    echo "Attempt $i: Found $PUBLISHED_COUNT published APIs"
+    if [ "$PUBLISHED_COUNT" -ge 3 ]; then
+        apictl get apis -e $ENV_NAME -k
+        echo ""
+        echo "All APIs deployed successfully"
+        exit 0
+    fi
+    sleep 5
+done
 apictl get apis -e $ENV_NAME -k
-
 echo ""
-echo "All APIs imported successfully"
+echo "All API imports completed"

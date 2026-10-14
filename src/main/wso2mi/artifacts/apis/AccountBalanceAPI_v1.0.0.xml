@@ -7,16 +7,17 @@
             <property name="timestamp" expression="get-property('SYSTEM_TIME')" scope="default" type="STRING"/>
             <property name="accountNum" expression="$ctx:uri.var.accountNumber" scope="default" type="STRING"/>
             
-            <!-- Call Data Service -->
-            <dataServiceCall serviceName="AccountDataService">
-                <operations type="single">
-                    <operation name="getAccountBalanceOp">
-                        <param name="accountNumber" value="{$ctx:uri.var.accountNumber}"/>
-                    </operation>
-                </operations>
-                <source type="inline"/>
-                <target type="body"/>
-            </dataServiceCall>
+            <!-- Call Data Service via HTTP -->
+            <header name="Accept" value="application/json" scope="transport"/>
+            <call>
+                <endpoint>
+                    <http method="GET" uri-template="http://localhost:8290/services/AccountDataService/accounts/{uri.var.accountNumber}/balance">
+                        <timeout>
+                            <duration>30000</duration>
+                        </timeout>
+                    </http>
+                </endpoint>
+            </call>
             
             <!-- Check if account exists (empty response check) -->
             <property name="accountData" expression="json-eval($.account.accountNumber)" scope="default" type="STRING"/>
