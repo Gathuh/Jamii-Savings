@@ -16,6 +16,7 @@
             
             <property name="REST_URL_POSTFIX" value="" scope="axis2"/>
             <property name="uri.var.backendUrl" expression="fn:concat('https://jsonplaceholder.typicode.com/users/', $ctx:customerId)" scope="default"/>
+            <header name="Accept-Encoding" value="gzip, deflate" scope="transport"/>
             <call blocking="true">
                 <endpoint>
                     <http method="GET" uri-template="{uri.var.backendUrl}">
