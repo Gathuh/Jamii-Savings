@@ -24,6 +24,14 @@
                             <duration>30000</duration>
                             <responseAction>fault</responseAction>
                         </timeout>
+                        <suspendOnFailure>
+                            <initialDuration>0</initialDuration>
+                            <progressionFactor>1.0</progressionFactor>
+                            <maximumDuration>0</maximumDuration>
+                        </suspendOnFailure>
+                        <markForSuspension>
+                            <retriesBeforeSuspension>0</retriesBeforeSuspension>
+                        </markForSuspension>
                     </http>
                 </endpoint>
             </call>
@@ -77,16 +85,33 @@
                 <property name="MESSAGE" value="Customer API - Error Occurred"/>
                 <property name="CORRELATION_ID" expression="$ctx:correlationId"/>
                 <property name="ERROR_MESSAGE" expression="get-property('ERROR_MESSAGE')"/>
+                <property name="ERROR_CODE" expression="get-property('ERROR_CODE')"/>
             </log>
-            <property name="HTTP_SC" value="503" scope="axis2" type="STRING"/>
-            <property name="messageType" value="application/json" scope="axis2"/>
-            <payloadFactory media-type="json">
-                <format>{"error":{"code":"SERVICE_UNAVAILABLE","message":"Customer service temporarily unavailable","status":503,"correlationId":"$1","timestamp":"$2"}}</format>
-                <args>
-                    <arg evaluator="xml" expression="$ctx:correlationId"/>
-                    <arg evaluator="xml" expression="$ctx:timestamp"/>
-                </args>
-            </payloadFactory>
+            <property name="errorMsg" expression="get-property('ERROR_MESSAGE')" scope="default" type="STRING"/>
+            <filter xpath="contains($ctx:errorMsg, '404')">
+                <then>
+                    <property name="HTTP_SC" value="404" scope="axis2" type="STRING"/>
+                    <property name="messageType" value="application/json" scope="axis2"/>
+                    <payloadFactory media-type="json">
+                        <format>{"error":{"code":"CUSTOMER_NOT_FOUND","message":"Customer not found","status":404,"correlationId":"$1","timestamp":"$2"}}</format>
+                        <args>
+                            <arg evaluator="xml" expression="$ctx:correlationId"/>
+                            <arg evaluator="xml" expression="$ctx:timestamp"/>
+                        </args>
+                    </payloadFactory>
+                </then>
+                <else>
+                    <property name="HTTP_SC" value="503" scope="axis2" type="STRING"/>
+                    <property name="messageType" value="application/json" scope="axis2"/>
+                    <payloadFactory media-type="json">
+                        <format>{"error":{"code":"SERVICE_UNAVAILABLE","message":"Customer service temporarily unavailable","status":503,"correlationId":"$1","timestamp":"$2"}}</format>
+                        <args>
+                            <arg evaluator="xml" expression="$ctx:correlationId"/>
+                            <arg evaluator="xml" expression="$ctx:timestamp"/>
+                        </args>
+                    </payloadFactory>
+                </else>
+            </filter>
             <header name="X-Correlation-ID" expression="$ctx:correlationId" scope="transport"/>
             <respond/>
         </faultSequence>
