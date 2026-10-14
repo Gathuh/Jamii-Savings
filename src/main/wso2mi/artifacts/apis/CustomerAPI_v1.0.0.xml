@@ -14,12 +14,9 @@
             
             <header name="X-Correlation-ID" expression="$ctx:correlationId" scope="transport"/>
             
-            <property name="DISABLE_CHUNKING" value="true" scope="axis2"/>
-            <property name="FORCE_HTTP_1.0" value="true" scope="axis2"/>
-            
-            <call>
+            <call blocking="true">
                 <endpoint>
-                    <http method="GET" uri-template="https://jsonplaceholder.typicode.com/users/{uri.var.customerId}">
+                    <http method="GET" uri-template="https://jsonplaceholder.typicode.com/users/{ctx:customerId}">
                         <timeout>
                             <duration>30000</duration>
                             <responseAction>fault</responseAction>
