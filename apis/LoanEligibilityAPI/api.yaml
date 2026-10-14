@@ -20,9 +20,9 @@ data:
   endpointConfig:
     endpoint_type: http
     production_endpoints:
-      url: http://localhost:8290/loans/1.0.0
+      url: http://jamii-mi:8290/loans/1.0.0
     sandbox_endpoints:
-      url: http://localhost:8290/loans/1.0.0
+      url: http://jamii-mi:8290/loans/1.0.0
   endpointImplementationType: ENDPOINT
   operations:
     - target: /eligibility

@@ -57,7 +57,7 @@ echo ""
 
 echo "Test 1: CustomerProxy"
 test_endpoint "CustomerProxy - Valid Customer" \
-    "GET" "$MI_URL/customers/1" "" "200" "correlationId"
+    "GET" "$MI_URL/customers/1.0.0/1" "" "200" "correlationId"
 
 test_endpoint "LoanEligibility - Eligible" \
     "POST" "$MI_URL/loans/1.0.0/eligibility" \
@@ -75,7 +75,7 @@ test_endpoint "LoanEligibility - Validation Error" \
     "400" "INVALID_REQUEST"
 
 test_endpoint "AccountBalance - Valid Account" \
-    "GET" "$MI_URL/accounts/ACC001/balance" "" "200" "ACC001" || true
+    "GET" "$MI_URL/accounts/1.0.0/ACC001/balance" "" "200" "ACC001" || true
 
 echo ""
 echo "=========================================="
