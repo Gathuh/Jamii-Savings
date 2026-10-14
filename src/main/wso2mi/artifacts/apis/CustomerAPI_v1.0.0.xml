@@ -14,9 +14,11 @@
             
             <header name="X-Correlation-ID" expression="$ctx:correlationId" scope="transport"/>
             
+            <property name="REST_URL_POSTFIX" value="" scope="axis2"/>
+            <property name="backendUrl" expression="fn:concat('https://jsonplaceholder.typicode.com/users/', $ctx:customerId)" scope="default"/>
             <call blocking="true">
                 <endpoint>
-                    <http method="GET" uri-template="https://jsonplaceholder.typicode.com/users/{ctx:customerId}">
+                    <http method="GET" uri-template="{uri.var.backendUrl}">
                         <timeout>
                             <duration>30000</duration>
                             <responseAction>fault</responseAction>
