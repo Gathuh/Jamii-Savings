@@ -27,5 +27,5 @@ data:
   operations:
     - target: /eligibility
       verb: POST
-      throttlingPolicy: Gold
+      throttlingPolicy: Unlimited
       authType: Application & Application User
