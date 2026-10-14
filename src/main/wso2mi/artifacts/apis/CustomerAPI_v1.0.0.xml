@@ -43,6 +43,9 @@
                 </endpoint>
             </call>
             
+            <!-- Build message to ensure JSON is accessible -->
+            <property name="messageType" value="application/json" scope="axis2"/>
+            <property name="ContentType" value="application/json" scope="axis2"/>
             <!-- Check if customer exists (JSONPlaceholder returns empty object for invalid ID) -->
             <property name="customerName" expression="json-eval($.name)" scope="default" type="STRING"/>
             
