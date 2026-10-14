@@ -2,70 +2,37 @@
 <api context="/customers" name="CustomerAPI" version="1.0.0" version-type="url" xmlns="http://ws.apache.org/ns/synapse">
     <resource methods="GET" uri-template="/{customerId}">
         <inSequence>
-            <!-- Check if correlation ID exists, if not generate one -->
-            <filter source="get-property('transport', 'X-Correlation-ID')" regex=".+">
-                <then>
-                    <property name="correlationId" expression="get-property('transport', 'X-Correlation-ID')" scope="default" type="STRING"/>
-                </then>
-                <else>
-                    <property name="correlationId" expression="fn:substring-after(get-property('MessageID'), 'urn:uuid:')" scope="default" type="STRING"/>
-                </else>
-            </filter>
-            
-            <!-- Store timestamp -->
+            <property name="correlationId" expression="fn:substring-after(get-property('MessageID'), 'urn:uuid:')" scope="default" type="STRING"/>
             <property name="timestamp" expression="get-property('SYSTEM_TIME')" scope="default" type="STRING"/>
             <property name="customerId" expression="$ctx:uri.var.customerId" scope="default" type="STRING"/>
             
-            <!-- Log incoming request with masked customer ID -->
             <log level="custom">
                 <property name="MESSAGE" value="Customer API - Incoming Request"/>
                 <property name="CORRELATION_ID" expression="$ctx:correlationId"/>
                 <property name="CUSTOMER_ID" expression="fn:concat('CUST-XXX', fn:substring($ctx:customerId, string-length($ctx:customerId) - 1))"/>
             </log>
             
-            <!-- Set correlation ID header for backend call -->
             <header name="X-Correlation-ID" expression="$ctx:correlationId" scope="transport"/>
             
-            <!-- Call JSONPlaceholder API (backend) -->
-            <call>
+            <call blocking="true">
                 <endpoint>
                     <http method="GET" uri-template="https://jsonplaceholder.typicode.com/users/{uri.var.customerId}">
                         <timeout>
                             <duration>30000</duration>
                             <responseAction>fault</responseAction>
                         </timeout>
-                        <suspendOnFailure>
-                            <initialDuration>1000</initialDuration>
-                            <progressionFactor>2</progressionFactor>
-                            <maximumDuration>60000</maximumDuration>
-                        </suspendOnFailure>
                     </http>
                 </endpoint>
             </call>
             
-            <!-- Build message to ensure JSON is accessible -->
-            <property name="messageType" value="application/json" scope="axis2"/>
-            <property name="ContentType" value="application/json" scope="axis2"/>
-            <!-- Check if customer exists (JSONPlaceholder returns empty object for invalid ID) -->
             <property name="customerName" expression="json-eval($.name)" scope="default" type="STRING"/>
             
             <filter xpath="$ctx:customerName = '' or not($ctx:customerName)">
                 <then>
-                    <!-- Customer not found - return 404 -->
                     <property name="HTTP_SC" value="404" scope="axis2" type="STRING"/>
                     <property name="messageType" value="application/json" scope="axis2"/>
                     <payloadFactory media-type="json">
-                        <format>
-                            {
-                                "error": {
-                                    "code": "CUSTOMER_NOT_FOUND",
-                                    "message": "Customer not found",
-                                    "status": 404,
-                                    "correlationId": "$1",
-                                    "timestamp": "$2"
-                                }
-                            }
-                        </format>
+                        <format>{"error":{"code":"CUSTOMER_NOT_FOUND","message":"Customer not found","status":404,"correlationId":"$1","timestamp":"$2"}}</format>
                         <args>
                             <arg evaluator="xml" expression="$ctx:correlationId"/>
                             <arg evaluator="xml" expression="$ctx:timestamp"/>
@@ -73,25 +40,9 @@
                     </payloadFactory>
                 </then>
                 <else>
-                    <!-- Customer found - transform response -->
                     <property name="messageType" value="application/json" scope="axis2"/>
                     <payloadFactory media-type="json">
-                        <format>
-                            {
-                                "customerId": "$1",
-                                "name": "$2",
-                                "email": "$3",
-                                "phone": "$4",
-                                "address": {
-                                    "street": "$5",
-                                    "city": "$6",
-                                    "zipcode": "$7"
-                                },
-                                "company": "$8",
-                                "correlationId": "$9",
-                                "timestamp": "$10"
-                            }
-                        </format>
+                        <format>{"customerId":"$1","name":"$2","email":"$3","phone":"$4","address":{"street":"$5","city":"$6","zipcode":"$7"},"company":"$8","correlationId":"$9","timestamp":"$10"}</format>
                         <args>
                             <arg evaluator="json" expression="$.id"/>
                             <arg evaluator="json" expression="$.name"/>
@@ -108,15 +59,8 @@
                 </else>
             </filter>
             
-            <!-- Strip internal headers from response -->
-            <header name="Server" action="remove" scope="transport"/>
-            <header name="X-Powered-By" action="remove" scope="transport"/>
-            <header name="X-Backend-Server" action="remove" scope="transport"/>
-            
-            <!-- Add correlation ID to response header -->
             <header name="X-Correlation-ID" expression="$ctx:correlationId" scope="transport"/>
             
-            <!-- Log outgoing response -->
             <log level="custom">
                 <property name="MESSAGE" value="Customer API - Outgoing Response"/>
                 <property name="CORRELATION_ID" expression="$ctx:correlationId"/>
@@ -126,38 +70,21 @@
             <respond/>
         </inSequence>
         <faultSequence>
-            <!-- Handle backend unavailability and other errors -->
             <log level="custom">
                 <property name="MESSAGE" value="Customer API - Error Occurred"/>
                 <property name="CORRELATION_ID" expression="$ctx:correlationId"/>
-                <property name="ERROR_CODE" expression="get-property('ERROR_CODE')"/>
                 <property name="ERROR_MESSAGE" expression="get-property('ERROR_MESSAGE')"/>
             </log>
-            
             <property name="HTTP_SC" value="503" scope="axis2" type="STRING"/>
             <property name="messageType" value="application/json" scope="axis2"/>
-            
             <payloadFactory media-type="json">
-                <format>
-                    {
-                        "error": {
-                            "code": "SERVICE_UNAVAILABLE",
-                            "message": "Customer service is temporarily unavailable. Please try again later.",
-                            "status": 503,
-                            "correlationId": "$1",
-                            "timestamp": "$2"
-                        }
-                    }
-                </format>
+                <format>{"error":{"code":"SERVICE_UNAVAILABLE","message":"Customer service temporarily unavailable","status":503,"correlationId":"$1","timestamp":"$2"}}</format>
                 <args>
                     <arg evaluator="xml" expression="$ctx:correlationId"/>
                     <arg evaluator="xml" expression="$ctx:timestamp"/>
                 </args>
             </payloadFactory>
-            
-            <!-- Add correlation ID to error response header -->
             <header name="X-Correlation-ID" expression="$ctx:correlationId" scope="transport"/>
-            
             <respond/>
         </faultSequence>
     </resource>
