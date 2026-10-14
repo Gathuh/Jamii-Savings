@@ -95,3 +95,4 @@ curl -k -X POST https://localhost:8243/loans/1.0.0/eligibility \
 |--------|-----|-------------|
 | Developer Portal | https://localhost:9443/devportal | admin / admin |
 | Publisher | https://localhost:9443/publisher | admin / admin |
+
