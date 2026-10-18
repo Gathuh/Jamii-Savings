@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<inboundEndpoint
+    name="LoanApplicationInboundEP"
+    protocol="rabbitmq"
+    sequence="LoanApplicationProcessSeq"
+    onError="LoanApplicationErrorSeq"
+    suspend="false"
+    xmlns="http://ws.apache.org/ns/synapse">
+    <parameters>
+        <parameter name="sequential">true</parameter>
+        <parameter name="coordination">true</parameter>
+        <parameter name="rabbitmq.connection.factory">AMQPConnectionFactory</parameter>
+        <parameter name="rabbitmq.server.host.name">localhost</parameter>
+        <parameter name="rabbitmq.server.port">5672</parameter>
+        <parameter name="rabbitmq.server.user.name">jamii</parameter>
+        <parameter name="rabbitmq.server.password">jamii123</parameter>
+        <parameter name="rabbitmq.queue.name">loan.applications</parameter>
+        <parameter name="rabbitmq.queue.durable">true</parameter>
+        <parameter name="rabbitmq.queue.exclusive">false</parameter>
+        <parameter name="rabbitmq.queue.auto.delete">false</parameter>
+        <parameter name="rabbitmq.queue.auto.ack">false</parameter>
+        <parameter name="rabbitmq.message.content.type">application/json</parameter>
+        <parameter name="rabbitmq.exchange.name">loan.exchange</parameter>
+        <parameter name="rabbitmq.exchange.type">direct</parameter>
+        <parameter name="rabbitmq.exchange.durable">true</parameter>
+        <parameter name="rabbitmq.queue.routing.key">loan.applications</parameter>
+        <!-- Dead letter queue config -->
+        <parameter name="rabbitmq.queue.autodeclare">true</parameter>
+        <parameter name="rabbitmq.queue.arguments">x-dead-letter-exchange=loan.deadletter.exchange</parameter>
+        <!-- Connection retry -->
+        <parameter name="rabbitmq.connection.retry.count">5</parameter>
+        <parameter name="rabbitmq.connection.retry.interval">10000</parameter>
+    </parameters>
+</inboundEndpoint>

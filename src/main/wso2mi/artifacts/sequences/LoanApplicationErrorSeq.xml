@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sequence name="LoanApplicationErrorSeq" xmlns="http://ws.apache.org/ns/synapse">
+
+    <property name="timestamp" expression="get-property('SYSTEM_TIME')" scope="default" type="STRING"/>
+    <property name="requestId" expression="fn:substring-after(get-property('MessageID'), 'urn:uuid:')" scope="default" type="STRING"/>
+    <property name="errorMessage" expression="get-property('ERROR_MESSAGE')" scope="default" type="STRING"/>
+    <property name="errorCode" expression="get-property('ERROR_CODE')" scope="default" type="STRING"/>
+
+    <log level="custom">
+        <property name="MESSAGE" value="LoanApplication - Unprocessable message routed to dead letter"/>
+        <property name="REQUEST_ID" expression="$ctx:requestId"/>
+        <property name="ERROR_CODE" expression="$ctx:errorCode"/>
+        <property name="ERROR_MESSAGE" expression="$ctx:errorMessage"/>
+    </log>
+
+    <payloadFactory media-type="json">
+        <format>{"requestId":"$1","error":"UNPROCESSABLE_MESSAGE","errorCode":"$2","errorMessage":"$3","timestamp":"$4"}</format>
+        <args>
+            <arg evaluator="xml" expression="$ctx:requestId"/>
+            <arg evaluator="xml" expression="$ctx:errorCode"/>
+            <arg evaluator="xml" expression="$ctx:errorMessage"/>
+            <arg evaluator="xml" expression="$ctx:timestamp"/>
+        </args>
+    </payloadFactory>
+
+    <property name="OUT_ONLY" value="true"/>
+    <property name="FORCE_SC_ACCEPTED" value="true" scope="axis2"/>
+    <send>
+        <endpoint>
+            <address uri="rabbitmq:/loan.deadletter?rabbitmq.server.host.name=localhost&amp;rabbitmq.server.port=5672&amp;rabbitmq.server.user.name=jamii&amp;rabbitmq.server.password=jamii123&amp;rabbitmq.queue.name=loan.deadletter&amp;rabbitmq.queue.durable=true&amp;rabbitmq.exchange.name=loan.deadletter.exchange&amp;rabbitmq.exchange.type=direct&amp;rabbitmq.queue.routing.key=loan.deadletter"/>
+        </endpoint>
+    </send>
+
+</sequence>

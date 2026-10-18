@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sequence name="LoanApplicationProcessSeq" xmlns="http://ws.apache.org/ns/synapse">
+
+    <!-- Extract fields from incoming message -->
+    <property name="customerId" expression="json-eval($.customerId)" scope="default" type="STRING"/>
+    <property name="accountNumber" expression="json-eval($.accountNumber)" scope="default" type="STRING"/>
+    <property name="loanAmount" expression="json-eval($.loanAmount)" scope="default" type="STRING"/>
+    <property name="loanTermMonths" expression="json-eval($.loanTermMonths)" scope="default" type="STRING"/>
+    <property name="requestId" expression="fn:substring-after(get-property('MessageID'), 'urn:uuid:')" scope="default" type="STRING"/>
+    <property name="timestamp" expression="get-property('SYSTEM_TIME')" scope="default" type="STRING"/>
+
+    <log level="custom">
+        <property name="MESSAGE" value="LoanApplication - Message Received"/>
+        <property name="REQUEST_ID" expression="$ctx:requestId"/>
+        <property name="CUSTOMER_ID" expression="$ctx:customerId"/>
+        <property name="LOAN_AMOUNT" expression="$ctx:loanAmount"/>
+    </log>
+
+    <!-- Validate required fields -->
+    <filter xpath="$ctx:customerId = '' or not($ctx:customerId) or
+                   $ctx:accountNumber = '' or not($ctx:accountNumber) or
+                   $ctx:loanAmount = '' or not($ctx:loanAmount) or
+                   $ctx:loanTermMonths = '' or not($ctx:loanTermMonths)">
+        <then>
+            <log level="custom">
+                <property name="MESSAGE" value="LoanApplication - Validation Failed - Missing required fields"/>
+                <property name="REQUEST_ID" expression="$ctx:requestId"/>
+            </log>
+            <!-- Route to dead letter -->
+            <payloadFactory media-type="json">
+                <format>{"requestId":"$1","error":"VALIDATION_FAILED","reason":"Missing required fields: customerId, accountNumber, loanAmount, loanTermMonths","originalMessage":{"customerId":"$2","accountNumber":"$3","loanAmount":"$4","loanTermMonths":"$5"},"timestamp":"$6"}</format>
+                <args>
+                    <arg evaluator="xml" expression="$ctx:requestId"/>
+                    <arg evaluator="xml" expression="$ctx:customerId"/>
+                    <arg evaluator="xml" expression="$ctx:accountNumber"/>
+                    <arg evaluator="xml" expression="$ctx:loanAmount"/>
+                    <arg evaluator="xml" expression="$ctx:loanTermMonths"/>
+                    <arg evaluator="xml" expression="$ctx:timestamp"/>
+                </args>
+            </payloadFactory>
+            <property name="OUT_ONLY" value="true"/>
+            <property name="FORCE_SC_ACCEPTED" value="true" scope="axis2"/>
+            <property name="rabbitmq.exchange.name" value="loan.deadletter.exchange" scope="axis2"/>
+            <property name="rabbitmq.queue.routing.key" value="loan.deadletter" scope="axis2"/>
+            <send>
+                <endpoint>
+                    <address uri="rabbitmq:/loan.deadletter?rabbitmq.server.host.name=localhost&amp;rabbitmq.server.port=5672&amp;rabbitmq.server.user.name=jamii&amp;rabbitmq.server.password=jamii123&amp;rabbitmq.queue.name=loan.deadletter&amp;rabbitmq.queue.durable=true&amp;rabbitmq.exchange.name=loan.deadletter.exchange&amp;rabbitmq.exchange.type=direct&amp;rabbitmq.queue.routing.key=loan.deadletter"/>
+                </endpoint>
+            </send>
+            <drop/>
+        </then>
+    </filter>
+
+    <!-- ===== Call Dashboard API ===== -->
+    <property name="REST_URL_POSTFIX" value="" scope="axis2"/>
+    <property name="uri.var.dashboardUrl" expression="fn:concat('http://localhost:8290/dashboard/1.0.0/', $ctx:customerId, '/', $ctx:accountNumber, '?loanAmount=', $ctx:loanAmount)" scope="default"/>
+    <header name="Accept-Encoding" value="gzip, deflate" scope="transport"/>
+    <call blocking="true">
+        <endpoint>
+            <http method="GET" uri-template="{uri.var.dashboardUrl}">
+                <timeout>
+                    <duration>30000</duration>
+                    <responseAction>fault</responseAction>
+                </timeout>
+                <suspendOnFailure>
+                    <initialDuration>0</initialDuration>
+                    <progressionFactor>1.0</progressionFactor>
+                    <maximumDuration>0</maximumDuration>
+                </suspendOnFailure>
+                <markForSuspension>
+                    <retriesBeforeSuspension>0</retriesBeforeSuspension>
+                </markForSuspension>
+            </http>
+        </endpoint>
+    </call>
+
+    <!-- Extract dashboard response fields -->
+    <property name="dashboardError" expression="json-eval($.error.code)" scope="default" type="STRING"/>
+    <property name="accountStatus" expression="json-eval($.account.status)" scope="default" type="STRING"/>
+    <property name="eligible" expression="json-eval($.loanEligibility.eligible)" scope="default" type="STRING"/>
+    <property name="maxEligibleAmount" expression="json-eval($.loanEligibility.maxEligibleAmount)" scope="default" type="STRING"/>
+    <property name="customerName" expression="json-eval($.profile.name)" scope="default" type="STRING"/>
+    <property name="accountBalance" expression="json-eval($.account.balance.amount)" scope="default" type="STRING"/>
+
+    <!-- Check if customer not found -->
+    <filter xpath="$ctx:dashboardError != '' and boolean($ctx:dashboardError)">
+        <then>
+            <log level="custom">
+                <property name="MESSAGE" value="LoanApplication - Customer or Account Error"/>
+                <property name="REQUEST_ID" expression="$ctx:requestId"/>
+                <property name="ERROR" expression="$ctx:dashboardError"/>
+            </log>
+            <payloadFactory media-type="json">
+                <format>{"requestId":"$1","status":"REJECTED","reason":"$2","customerId":"$3","loanAmount":$4,"timestamp":"$5"}</format>
+                <args>
+                    <arg evaluator="xml" expression="$ctx:requestId"/>
+                    <arg evaluator="xml" expression="$ctx:dashboardError"/>
+                    <arg evaluator="xml" expression="$ctx:customerId"/>
+                    <arg evaluator="xml" expression="$ctx:loanAmount"/>
+                    <arg evaluator="xml" expression="$ctx:timestamp"/>
+                </args>
+            </payloadFactory>
+            <property name="OUT_ONLY" value="true"/>
+            <property name="FORCE_SC_ACCEPTED" value="true" scope="axis2"/>
+            <send>
+                <endpoint>
+                    <address uri="rabbitmq:/loan.rejected?rabbitmq.server.host.name=localhost&amp;rabbitmq.server.port=5672&amp;rabbitmq.server.user.name=jamii&amp;rabbitmq.server.password=jamii123&amp;rabbitmq.queue.name=loan.rejected&amp;rabbitmq.queue.durable=true&amp;rabbitmq.exchange.name=loan.exchange&amp;rabbitmq.exchange.type=direct&amp;rabbitmq.queue.routing.key=loan.rejected"/>
+                </endpoint>
+            </send>
+            <drop/>
+        </then>
+    </filter>
+
+    <!-- Route based on account status and eligibility -->
+    <filter xpath="$ctx:accountStatus = 'ACTIVE' and $ctx:eligible = 'true'">
+        <then>
+            <!-- APPROVED -->
+            <log level="custom">
+                <property name="MESSAGE" value="LoanApplication - APPROVED"/>
+                <property name="REQUEST_ID" expression="$ctx:requestId"/>
+                <property name="CUSTOMER" expression="$ctx:customerName"/>
+                <property name="MAX_ELIGIBLE" expression="$ctx:maxEligibleAmount"/>
+            </log>
+            <payloadFactory media-type="json">
+                <format>{"requestId":"$1","status":"APPROVED","customerId":"$2","customerName":"$3","accountNumber":"$4","accountStatus":"$5","requestedAmount":$6,"maxEligibleAmount":$7,"balance":$8,"loanTermMonths":$9,"timestamp":"$10"}</format>
+                <args>
+                    <arg evaluator="xml" expression="$ctx:requestId"/>
+                    <arg evaluator="xml" expression="$ctx:customerId"/>
+                    <arg evaluator="xml" expression="$ctx:customerName"/>
+                    <arg evaluator="xml" expression="$ctx:accountNumber"/>
+                    <arg evaluator="xml" expression="$ctx:accountStatus"/>
+                    <arg evaluator="xml" expression="$ctx:loanAmount"/>
+                    <arg evaluator="xml" expression="$ctx:maxEligibleAmount"/>
+                    <arg evaluator="xml" expression="$ctx:accountBalance"/>
+                    <arg evaluator="xml" expression="$ctx:loanTermMonths"/>
+                    <arg evaluator="xml" expression="$ctx:timestamp"/>
+                </args>
+            </payloadFactory>
+            <property name="OUT_ONLY" value="true"/>
+            <property name="FORCE_SC_ACCEPTED" value="true" scope="axis2"/>
+            <send>
+                <endpoint>
+                    <address uri="rabbitmq:/loan.approved?rabbitmq.server.host.name=localhost&amp;rabbitmq.server.port=5672&amp;rabbitmq.server.user.name=jamii&amp;rabbitmq.server.password=jamii123&amp;rabbitmq.queue.name=loan.approved&amp;rabbitmq.queue.durable=true&amp;rabbitmq.exchange.name=loan.exchange&amp;rabbitmq.exchange.type=direct&amp;rabbitmq.queue.routing.key=loan.approved"/>
+                </endpoint>
+            </send>
+        </then>
+        <else>
+            <!-- REJECTED -->
+            <log level="custom">
+                <property name="MESSAGE" value="LoanApplication - REJECTED"/>
+                <property name="REQUEST_ID" expression="$ctx:requestId"/>
+                <property name="ACCOUNT_STATUS" expression="$ctx:accountStatus"/>
+                <property name="ELIGIBLE" expression="$ctx:eligible"/>
+            </log>
+            <script language="js">
+                var accountStatus = mc.getProperty("accountStatus");
+                var eligible = mc.getProperty("eligible");
+                var reason = "";
+                if (accountStatus != "ACTIVE") {
+                    reason = "Account is not active. Status: " + accountStatus;
+                } else {
+                    reason = "Loan eligibility check failed. Insufficient income.";
+                }
+                mc.setProperty("rejectionReason", reason);
+            </script>
+            <payloadFactory media-type="json">
+                <format>{"requestId":"$1","status":"REJECTED","reason":"$2","customerId":"$3","customerName":"$4","accountNumber":"$5","accountStatus":"$6","requestedAmount":$7,"loanTermMonths":$8,"timestamp":"$9"}</format>
+                <args>
+                    <arg evaluator="xml" expression="$ctx:requestId"/>
+                    <arg evaluator="xml" expression="$ctx:rejectionReason"/>
+                    <arg evaluator="xml" expression="$ctx:customerId"/>
+                    <arg evaluator="xml" expression="$ctx:customerName"/>
+                    <arg evaluator="xml" expression="$ctx:accountNumber"/>
+                    <arg evaluator="xml" expression="$ctx:accountStatus"/>
+                    <arg evaluator="xml" expression="$ctx:loanAmount"/>
+                    <arg evaluator="xml" expression="$ctx:loanTermMonths"/>
+                    <arg evaluator="xml" expression="$ctx:timestamp"/>
+                </args>
+            </payloadFactory>
+            <property name="OUT_ONLY" value="true"/>
+            <property name="FORCE_SC_ACCEPTED" value="true" scope="axis2"/>
+            <send>
+                <endpoint>
+                    <address uri="rabbitmq:/loan.rejected?rabbitmq.server.host.name=localhost&amp;rabbitmq.server.port=5672&amp;rabbitmq.server.user.name=jamii&amp;rabbitmq.server.password=jamii123&amp;rabbitmq.queue.name=loan.rejected&amp;rabbitmq.queue.durable=true&amp;rabbitmq.exchange.name=loan.exchange&amp;rabbitmq.exchange.type=direct&amp;rabbitmq.queue.routing.key=loan.rejected"/>
+                </endpoint>
+            </send>
+        </else>
+    </filter>
+
+</sequence>

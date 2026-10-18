@@ -39,7 +39,24 @@ wait_for_mysql() {
     return 1
 }
 
+wait_for_rabbitmq() {
+    local retries=0
+    echo "Waiting for RabbitMQ..."
+    while [ $retries -lt $MAX_RETRIES ]; do
+        if docker exec jamii-rabbitmq rabbitmq-diagnostics ping --silent 2>/dev/null; then
+            echo "RabbitMQ is ready"
+            return 0
+        fi
+        retries=$((retries + 1))
+        echo "  Attempt $retries/$MAX_RETRIES - RabbitMQ not ready, waiting ${RETRY_INTERVAL}s..."
+        sleep $RETRY_INTERVAL
+    done
+    echo "ERROR: RabbitMQ failed to start"
+    return 1
+}
+
 wait_for_mysql
+wait_for_rabbitmq
 wait_for_http "WSO2 MI" "http://localhost:9201/healthz"
 wait_for_http "WSO2 APIM" "https://localhost:9443/services/Version"
 

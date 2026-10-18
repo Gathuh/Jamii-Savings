@@ -31,6 +31,8 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     environment:
       - JAVA_OPTS=-Xms512m -Xmx1024m
       - DB_HOST=jamii-mysql
@@ -41,6 +43,21 @@ services:
       timeout: 10s
       retries: 20
       start_period: 60s
+
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    container_name: jamii-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: jamii
+      RABBITMQ_DEFAULT_PASS: jamii123
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   wso2am:
     image: wso2/wso2am:4.3.0
