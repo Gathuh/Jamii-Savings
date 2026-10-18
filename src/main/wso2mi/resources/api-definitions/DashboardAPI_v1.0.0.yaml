@@ -1,0 +1,109 @@
+openapi: 3.0.1
+info:
+  title: DashboardAPI
+  description: Aggregation API combining customer profile, account balance and loan eligibility
+  version: 1.0.0
+servers:
+  - url: http://localhost:8290/dashboard/1.0.0
+  - url: https://localhost:8253/dashboard/1.0.0
+paths:
+  /{customerId}/{accountNumber}:
+    get:
+      summary: Get customer dashboard
+      description: Returns customer profile, account balance and loan eligibility in a single response
+      parameters:
+        - name: customerId
+          in: path
+          required: true
+          description: JSONPlaceholder customer ID (1-10)
+          schema:
+            type: string
+        - name: accountNumber
+          in: path
+          required: true
+          description: Bank account number
+          schema:
+            type: string
+        - name: loanAmount
+          in: query
+          required: true
+          description: Requested loan amount in KES
+          schema:
+            type: number
+      responses:
+        "200":
+          description: Dashboard data returned successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  customerId:
+                    type: string
+                  profile:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      email:
+                        type: string
+                      phone:
+                        type: string
+                      address:
+                        type: object
+                        properties:
+                          street:
+                            type: string
+                          city:
+                            type: string
+                      company:
+                        type: string
+                  account:
+                    type: object
+                    nullable: true
+                    properties:
+                      accountNumber:
+                        type: string
+                      status:
+                        type: string
+                        enum: [ACTIVE, DORMANT, CLOSED]
+                      balance:
+                        type: object
+                        properties:
+                          amount:
+                            type: number
+                          currency:
+                            type: string
+                  loanEligibility:
+                    type: object
+                    properties:
+                      eligible:
+                        type: boolean
+                      maxEligibleAmount:
+                        type: number
+                      eligibilityScore:
+                        type: number
+                      reason:
+                        type: string
+                  correlationId:
+                    type: string
+                  timestamp:
+                    type: string
+        "404":
+          description: Customer not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      code:
+                        type: string
+                      message:
+                        type: string
+                      status:
+                        type: integer
+        "503":
+          description: Service unavailable

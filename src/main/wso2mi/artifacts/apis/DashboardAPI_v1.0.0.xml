@@ -1,0 +1,251 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<api context="/dashboard" name="DashboardAPI" version="1.0.0" version-type="url" xmlns="http://ws.apache.org/ns/synapse">
+    <resource methods="GET" uri-template="/{customerId}/{accountNumber}">
+        <inSequence>
+            <property name="correlationId" expression="fn:substring-after(get-property('MessageID'), 'urn:uuid:')" scope="default" type="STRING"/>
+            <property name="timestamp" expression="get-property('SYSTEM_TIME')" scope="default" type="STRING"/>
+            <property name="customerId" expression="$ctx:uri.var.customerId" scope="default" type="STRING"/>
+            <property name="accountNumber" expression="$ctx:uri.var.accountNumber" scope="default" type="STRING"/>
+            <property name="requestedLoanAmount" expression="get-property('query.param.loanAmount')" scope="default" type="STRING"/>
+
+            <log level="custom">
+                <property name="MESSAGE" value="Dashboard API - Incoming Request"/>
+                <property name="CORRELATION_ID" expression="$ctx:correlationId"/>
+                <property name="CUSTOMER_ID" expression="$ctx:customerId"/>
+            </log>
+
+            <!-- ===== CALL 1: Customer Profile ===== -->
+            <property name="REST_URL_POSTFIX" value="" scope="axis2"/>
+            <property name="uri.var.customerUrl" expression="fn:concat('https://jsonplaceholder.typicode.com/users/', $ctx:customerId)" scope="default"/>
+            <header name="Accept-Encoding" value="gzip, deflate" scope="transport"/>
+            <call blocking="true">
+                <endpoint>
+                    <http method="GET" uri-template="{uri.var.customerUrl}">
+                        <timeout><duration>10000</duration><responseAction>fault</responseAction></timeout>
+                        <suspendOnFailure>
+                            <initialDuration>0</initialDuration>
+                            <progressionFactor>1.0</progressionFactor>
+                            <maximumDuration>0</maximumDuration>
+                        </suspendOnFailure>
+                        <markForSuspension><retriesBeforeSuspension>0</retriesBeforeSuspension></markForSuspension>
+                    </http>
+                </endpoint>
+            </call>
+
+            <property name="customerName" expression="json-eval($.name)" scope="default" type="STRING"/>
+            <property name="customerEmail" expression="json-eval($.email)" scope="default" type="STRING"/>
+            <property name="customerPhone" expression="json-eval($.phone)" scope="default" type="STRING"/>
+            <property name="customerStreet" expression="json-eval($.address.street)" scope="default" type="STRING"/>
+            <property name="customerCity" expression="json-eval($.address.city)" scope="default" type="STRING"/>
+            <property name="customerCompany" expression="json-eval($.company.name)" scope="default" type="STRING"/>
+
+            <!-- Stop if customer not found -->
+            <filter xpath="$ctx:customerName = '' or not($ctx:customerName)">
+                <then>
+                    <property name="HTTP_SC" value="404" scope="axis2" type="STRING"/>
+                    <property name="messageType" value="application/json" scope="axis2"/>
+                    <payloadFactory media-type="json">
+                        <format>{"error":{"code":"CUSTOMER_NOT_FOUND","message":"Customer not found","status":404,"correlationId":"$1","timestamp":"$2"}}</format>
+                        <args>
+                            <arg evaluator="xml" expression="$ctx:correlationId"/>
+                            <arg evaluator="xml" expression="$ctx:timestamp"/>
+                        </args>
+                    </payloadFactory>
+                    <respond/>
+                </then>
+            </filter>
+
+            <!-- ===== CALL 2: Account Balance ===== -->
+            <property name="accountFound" value="false" scope="default" type="STRING"/>
+            <property name="accountBalance" value="0" scope="default" type="STRING"/>
+            <property name="accountStatus" value="" scope="default" type="STRING"/>
+            <property name="accountCurrency" value="KES" scope="default" type="STRING"/>
+            <property name="callingAccount" value="true" scope="default" type="STRING"/>
+
+            <filter xpath="$ctx:accountNumber != '' and $ctx:accountNumber != 'null' and boolean($ctx:accountNumber)">
+                <then>
+                    <property name="REST_URL_POSTFIX" value="" scope="axis2"/>
+                    <property name="uri.var.accountUrl" expression="fn:concat('http://localhost:8290/accounts/1.0.0/', $ctx:accountNumber, '/balance')" scope="default"/>
+                    <call blocking="true">
+                        <endpoint>
+                            <http method="GET" uri-template="{uri.var.accountUrl}">
+                                <timeout><duration>10000</duration><responseAction>fault</responseAction></timeout>
+                                <suspendOnFailure>
+                                    <initialDuration>0</initialDuration>
+                                    <progressionFactor>1.0</progressionFactor>
+                                    <maximumDuration>0</maximumDuration>
+                                </suspendOnFailure>
+                                <markForSuspension><retriesBeforeSuspension>0</retriesBeforeSuspension></markForSuspension>
+                            </http>
+                        </endpoint>
+                    </call>
+                    <property name="accountBalance" expression="json-eval($.balance.amount)" scope="default" type="STRING"/>
+                    <property name="accountStatus" expression="json-eval($.status)" scope="default" type="STRING"/>
+                    <property name="accountCurrency" expression="json-eval($.balance.currency)" scope="default" type="STRING"/>
+                    <filter xpath="$ctx:accountBalance != '' and $ctx:accountBalance != 'null' and boolean($ctx:accountBalance)">
+                        <then>
+                            <property name="accountFound" value="true" scope="default" type="STRING"/>
+                        </then>
+                    </filter>
+                </then>
+            </filter>
+
+            <!-- ===== CALL 3: Loan Eligibility (only if account found) ===== -->
+            <property name="loanEligible" value="false" scope="default" type="STRING"/>
+            <property name="loanMaxAmount" value="0" scope="default" type="STRING"/>
+            <property name="loanScore" value="0" scope="default" type="STRING"/>
+            <property name="loanSkipReason" value="No transaction history found" scope="default" type="STRING"/>
+
+            <filter xpath="$ctx:accountFound = 'true'">
+                <then>
+                    <!-- Use script mediator to safely compute monthlyIncome = balance * 5 as integer -->
+                    <script language="js">
+                        var balance = parseFloat(mc.getProperty("accountBalance"));
+                        var monthlyIncome = Math.round(balance * 5);
+                        var requested = mc.getProperty("requestedLoanAmount");
+                        var loanAmount = (requested != null &amp;&amp; requested != '' &amp;&amp; requested != 'null') ? Math.round(parseFloat(requested)) : Math.round(balance);
+                        mc.setProperty("monthlyIncome", String(monthlyIncome));
+                        mc.setProperty("loanAmount", String(loanAmount));
+                    </script>
+
+                    <property name="messageType" value="application/json" scope="axis2"/>
+                    <property name="ContentType" value="application/json" scope="axis2"/>
+                    <payloadFactory media-type="json">
+                        <format>{"customerId":"$1","monthlyIncome":$2,"loanAmount":$3,"loanTermMonths":12}</format>
+                        <args>
+                            <arg evaluator="xml" expression="$ctx:customerId"/>
+                            <arg evaluator="xml" expression="$ctx:monthlyIncome"/>
+                            <arg evaluator="xml" expression="$ctx:loanAmount"/>
+                        </args>
+                    </payloadFactory>
+
+                    <call blocking="true">
+                        <endpoint>
+                            <http method="POST" uri-template="http://localhost:8290/loans/1.0.0/eligibility">
+                                <timeout><duration>15000</duration><responseAction>fault</responseAction></timeout>
+                                <suspendOnFailure>
+                                    <initialDuration>0</initialDuration>
+                                    <progressionFactor>1.0</progressionFactor>
+                                    <maximumDuration>0</maximumDuration>
+                                </suspendOnFailure>
+                                <markForSuspension><retriesBeforeSuspension>0</retriesBeforeSuspension></markForSuspension>
+                            </http>
+                        </endpoint>
+                    </call>
+
+                    <property name="loanEligible" expression="json-eval($.eligible)" scope="default" type="STRING"/>
+                    <property name="loanMaxAmount" expression="json-eval($.maxEligibleAmount)" scope="default" type="STRING"/>
+                    <property name="loanScore" expression="json-eval($.eligibilityScore)" scope="default" type="STRING"/>
+                    <property name="loanSkipReason" value="" scope="default" type="STRING"/>
+                </then>
+            </filter>
+
+            <!-- ===== BUILD FINAL RESPONSE ===== -->
+            <property name="messageType" value="application/json" scope="axis2"/>
+            <filter xpath="$ctx:accountFound = 'true'">
+                <then>
+                    <payloadFactory media-type="json">
+                        <format>{"customerId":"$1","profile":{"name":"$2","email":"$3","phone":"$4","address":{"street":"$5","city":"$6"},"company":"$7"},"account":{"accountNumber":"$8","status":"$9","balance":{"amount":$10,"currency":"$11"}},"loanEligibility":{"eligible":$12,"maxEligibleAmount":$13,"eligibilityScore":$14},"correlationId":"$15","timestamp":"$16"}</format>
+                        <args>
+                            <arg evaluator="xml" expression="$ctx:customerId"/>
+                            <arg evaluator="xml" expression="$ctx:customerName"/>
+                            <arg evaluator="xml" expression="$ctx:customerEmail"/>
+                            <arg evaluator="xml" expression="$ctx:customerPhone"/>
+                            <arg evaluator="xml" expression="$ctx:customerStreet"/>
+                            <arg evaluator="xml" expression="$ctx:customerCity"/>
+                            <arg evaluator="xml" expression="$ctx:customerCompany"/>
+                            <arg evaluator="xml" expression="$ctx:accountNumber"/>
+                            <arg evaluator="xml" expression="$ctx:accountStatus"/>
+                            <arg evaluator="xml" expression="$ctx:accountBalance"/>
+                            <arg evaluator="xml" expression="$ctx:accountCurrency"/>
+                            <arg evaluator="xml" expression="$ctx:loanEligible"/>
+                            <arg evaluator="xml" expression="$ctx:loanMaxAmount"/>
+                            <arg evaluator="xml" expression="$ctx:loanScore"/>
+                            <arg evaluator="xml" expression="$ctx:correlationId"/>
+                            <arg evaluator="xml" expression="$ctx:timestamp"/>
+                        </args>
+                    </payloadFactory>
+                </then>
+                <else>
+                    <payloadFactory media-type="json">
+                        <format>{"customerId":"$1","profile":{"name":"$2","email":"$3","phone":"$4","address":{"street":"$5","city":"$6"},"company":"$7"},"account":null,"loanEligibility":{"eligible":false,"reason":"$8"},"correlationId":"$9","timestamp":"$10"}</format>
+                        <args>
+                            <arg evaluator="xml" expression="$ctx:customerId"/>
+                            <arg evaluator="xml" expression="$ctx:customerName"/>
+                            <arg evaluator="xml" expression="$ctx:customerEmail"/>
+                            <arg evaluator="xml" expression="$ctx:customerPhone"/>
+                            <arg evaluator="xml" expression="$ctx:customerStreet"/>
+                            <arg evaluator="xml" expression="$ctx:customerCity"/>
+                            <arg evaluator="xml" expression="$ctx:customerCompany"/>
+                            <arg evaluator="xml" expression="$ctx:loanSkipReason"/>
+                            <arg evaluator="xml" expression="$ctx:correlationId"/>
+                            <arg evaluator="xml" expression="$ctx:timestamp"/>
+                        </args>
+                    </payloadFactory>
+                </else>
+            </filter>
+
+            <log level="custom">
+                <property name="MESSAGE" value="Dashboard API - Response Sent"/>
+                <property name="CORRELATION_ID" expression="$ctx:correlationId"/>
+                <property name="ACCOUNT_FOUND" expression="$ctx:accountFound"/>
+            </log>
+            <respond/>
+        </inSequence>
+        <faultSequence>
+            <log level="custom">
+                <property name="MESSAGE" value="Dashboard API - Error"/>
+                <property name="CORRELATION_ID" expression="$ctx:correlationId"/>
+                <property name="ERROR_MESSAGE" expression="get-property('ERROR_MESSAGE')"/>
+            </log>
+            <property name="errorMsg" expression="get-property('ERROR_MESSAGE')" scope="default" type="STRING"/>
+            <!-- If error happened during account call and it is a 404, return partial data -->
+            <filter xpath="$ctx:callingAccount = 'true' and contains($ctx:errorMsg, '404')">
+                <then>
+                    <property name="messageType" value="application/json" scope="axis2"/>
+                    <payloadFactory media-type="json">
+                        <format>{"customerId":"$1","profile":{"name":"$2","email":"$3","phone":"$4","address":{"street":"$5","city":"$6"},"company":"$7"},"account":null,"loanEligibility":{"eligible":false,"reason":"No transaction history found"},"correlationId":"$8","timestamp":"$9"}</format>
+                        <args>
+                            <arg evaluator="xml" expression="$ctx:customerId"/>
+                            <arg evaluator="xml" expression="$ctx:customerName"/>
+                            <arg evaluator="xml" expression="$ctx:customerEmail"/>
+                            <arg evaluator="xml" expression="$ctx:customerPhone"/>
+                            <arg evaluator="xml" expression="$ctx:customerStreet"/>
+                            <arg evaluator="xml" expression="$ctx:customerCity"/>
+                            <arg evaluator="xml" expression="$ctx:customerCompany"/>
+                            <arg evaluator="xml" expression="$ctx:correlationId"/>
+                            <arg evaluator="xml" expression="$ctx:timestamp"/>
+                        </args>
+                    </payloadFactory>
+                </then>
+                <else>
+                    <filter xpath="contains($ctx:errorMsg, '404')">
+                        <then>
+                            <property name="HTTP_SC" value="404" scope="axis2" type="STRING"/>
+                            <property name="messageType" value="application/json" scope="axis2"/>
+                            <payloadFactory media-type="json">
+                                <format>{"error":{"code":"CUSTOMER_NOT_FOUND","message":"Customer not found","status":404,"correlationId":"$1","timestamp":"$2"}}</format>
+                                <args>
+                                    <arg evaluator="xml" expression="$ctx:correlationId"/>
+                                    <arg evaluator="xml" expression="$ctx:timestamp"/>
+                                </args>
+                            </payloadFactory>
+                        </then>
+                        <else>
+                            <property name="HTTP_SC" value="503" scope="axis2" type="STRING"/>
+                            <property name="messageType" value="application/json" scope="axis2"/>
+                            <payloadFactory media-type="json">
+                                <format>{"error":{"code":"SERVICE_UNAVAILABLE","message":"Dashboard service temporarily unavailable","status":503,"correlationId":"$1","timestamp":"$2"}}</format>
+                                <args>
+                                    <arg evaluator="xml" expression="$ctx:correlationId"/>
+                                    <arg evaluator="xml" expression="$ctx:timestamp"/>
+                                </args>
+                            </payloadFactory>
+                        </else>
+                    </filter>
+                </else>
+            </filter>
+            <respond/>
+        </faultSequence>
+    </resource>
+</api>

@@ -1,0 +1,20 @@
+openapi: 3.0.1
+info:
+  title: CustomerAPI
+  description: API Definition of CustomerAPI
+  version: 1.0.0
+servers:
+- url: http://localhost:8290/customers/1.0.0
+- url: https://localhost:8253/customers/1.0.0
+paths:
+  /{customerId}:
+    get:
+      parameters:
+      - name: customerId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        default:
+          description: Default response

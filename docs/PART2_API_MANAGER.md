@@ -96,3 +96,74 @@ curl -k -X POST https://localhost:8243/loans/1.0.0/eligibility \
 ### OpenAPI Specifications
 
 Located at `apis/{API}/Definitions/swagger.yaml` for each API. These can be imported into Postman or Swagger UI.
+
+## Bonus A - Dashboard Aggregation API
+
+### Endpoint
+
+```
+GET /dashboard/1.0.0/{customerId}?accountNumber={accountNumber}
+```
+
+### Design Decision: Sequential with Partial Data
+
+The assignment suggested parallel calls. After analysis, a hybrid approach was chosen. CustomerProxy and AccountBalance are called with inputs provided upfront in the request (customerId and accountNumber as a query parameter), so they could fire independently. However LoanEligibility depends on the balance returned by AccountBalance (balance x 5 is used as monthlyIncome), making it strictly sequential.
+
+The hierarchy is:
+
+1. Call CustomerProxy (customerId) - if customer not found, stop and return 404
+2. Call AccountBalance (accountNumber) - if no account, return profile only, skip eligibility
+3. Call LoanEligibility (balance x 5 as monthlyIncome) - only if account found
+
+If account is missing, loan eligibility returns `eligible: false` with reason "No transaction history found" rather than failing the whole response. This means a customer with no account still gets their profile data.
+
+### Response Scenarios
+
+**Customer found, account found:**
+```json
+{
+  "customerId": "1",
+  "profile": { "name": "Leanne Graham", "email": "...", "phone": "..." },
+  "account": { "accountNumber": "1001001001", "status": "ACTIVE", "balance": { "amount": 50000.0, "currency": "KES" } },
+  "loanEligibility": { "eligible": true, "maxEligibleAmount": 200000, "eligibilityScore": 200000 }
+}
+```
+
+**Customer found, no account:**
+```json
+{
+  "customerId": "6",
+  "profile": { "name": "...", "email": "...", "phone": "..." },
+  "account": null,
+  "loanEligibility": { "eligible": false, "reason": "No transaction history found" }
+}
+```
+
+**Customer not found:**
+```json
+{ "error": { "code": "CUSTOMER_NOT_FOUND", "status": 404 } }
+```
+
+### Testing
+
+```bash
+# Full response (customer + account + eligibility)
+curl -s "http://localhost:8290/dashboard/1.0.0/1?accountNumber=1001001001"
+
+# Partial response (customer only, no account)
+curl -s "http://localhost:8290/dashboard/1.0.0/6"
+
+# Not found
+curl -s "http://localhost:8290/dashboard/1.0.0/99"
+```
+
+### Account to Customer Mapping
+
+| customerId | accountNumber |
+|------------|---------------|
+| 1 | 1001001001 |
+| 2 | 1001001002 |
+| 3 | 1001001003 |
+| 4 | 1001001004 |
+| 5 | 1001001005 |
+| 6-10 | No account (partial data returned) |

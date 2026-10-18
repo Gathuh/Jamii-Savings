@@ -10,6 +10,7 @@ A WSO2-based integration platform exposing three core banking APIs through WSO2 
 | DB schema and seed script | `database/init.sql`, `database/schema.sql`, `database/seed-data.sql` |
 | APIM API definitions for all three | `apis/AccountBalanceAPI/`, `apis/CustomerProxyAPI/`, `apis/LoanEligibilityAPI/` |
 | API Product | `apis/JamiiBankingProduct/api_product.yaml` |
+| Bonus A - Dashboard Aggregation API | `src/main/wso2mi/artifacts/apis/DashboardAPI_v1.0.0.xml` |
 | Jenkinsfile | `Jenkinsfile` |
 | README | `README.md` |
 
