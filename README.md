@@ -11,6 +11,7 @@ A WSO2-based integration platform exposing three core banking APIs through WSO2 
 | APIM API definitions for all three | `apis/AccountBalanceAPI/`, `apis/CustomerProxyAPI/`, `apis/LoanEligibilityAPI/` |
 | API Product | `apis/JamiiBankingProduct/api_product.yaml` |
 | Bonus A - Dashboard Aggregation API | `src/main/wso2mi/artifacts/apis/DashboardAPI_v1.0.0.xml` |
+| Bonus B - RabbitMQ Integration | `src/main/wso2mi/artifacts/inbound-endpoints/`, `artifacts/sequences/` |
 | Jenkinsfile | `Jenkinsfile` |
 | README | `README.md` |
 
@@ -74,4 +75,4 @@ For API test commands see `docs/PART2_API_MANAGER.md`. For pipeline details see 
 | Developer Portal | https://localhost:9443/devportal | admin / admin |
 | Publisher | https://localhost:9443/publisher | admin / admin |
 
-For detailed technical documentation see the `docs/` folder.
+For detailed technical documentation see the `docs/` folder. Bonus A (Dashboard API) and Bonus B (RabbitMQ) are documented in `docs/BONUS.md`.
